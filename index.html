@@ -630,16 +630,23 @@ img{max-width:100%;display:block;}
         <button class="btn btn-primary btn-sm" onclick="saveRecipe()">Enregistrer</button>
       </div>
       <!-- Photo -->
-      <div class="photo-drop" id="photo-drop-zone" onclick="document.getElementById('photo-input').click()">
-        <div id="photo-preview-wrap">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin:0 auto 8px;display:block;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          <div class="hand" style="font-size:15px;">Ajouter une photo</div>
-          <div class="faint" style="margin-top:4px;">tap pour camera ou galerie · ou décrire pour IA ✨</div>
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button class="btn" style="flex:1;justify-content:center;gap:6px;" onclick="document.getElementById('photo-camera').click()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            Appareil photo
+          </button>
+          <button class="btn" style="flex:1;justify-content:center;gap:6px;" onclick="document.getElementById('photo-gallery').click()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Galerie
+          </button>
         </div>
-        <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(event)">
+        <input type="file" id="photo-camera" accept="image/*" capture="environment" style="display:none;" multiple onchange="handlePhotos(event)">
+        <input type="file" id="photo-gallery" accept="image/*" style="display:none;" multiple onchange="handlePhotos(event)">
+        <div id="photo-preview-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
       </div>
       <!-- IA transcription -->
-      <button class="btn" style="width:100%;justify-content:center;margin:10px 0;" onclick="geminiTranscribe()">
+      <button class="btn" style="width:100%;justify-content:center;margin:0 0 10px;" onclick="geminiTranscribe()">
         ✨ Transcrire depuis la photo (Gemini)
       </button>
       <div class="field">
@@ -1144,12 +1151,12 @@ function openRecipe(id){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;align-items:start;position:relative;z-index:1;" class="fade-in-2">
         <div>
           <div class="tape tape-l"></div>
-          <div class="polaroid" style="transform:rotate(-1.2deg);">
-            ${r.photoId
-              ? `<img src="https://lh3.googleusercontent.com/d/${r.photoId}" style="width:100%;aspect-ratio:1/1;object-fit:cover;" onerror="this.outerHTML='<div class=\\'photo-ph\\'>[photo]</div>'">`
-              : `<div class="photo-ph" style="display:flex;align-items:center;justify-content:center;height:100px;">[photo plat]</div>`}
-            <div class="polaroid-cap">le plat fini</div>
-          </div>
+          ${(()=>{
+            const ids = (r.photoIds && r.photoIds.length) ? r.photoIds : (r.photoId ? [r.photoId] : []);
+            if(!ids.length) return `<div class="polaroid" style="transform:rotate(-1.2deg);"><div style="height:90px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);">[photo plat]</div><div class="polaroid-cap">le plat fini</div></div>`;
+            if(ids.length === 1) return `<div class="polaroid" style="transform:rotate(-1.2deg);"><img src="https://lh3.googleusercontent.com/d/${ids[0]}" style="width:100%;aspect-ratio:1/1;object-fit:cover;"><div class="polaroid-cap">le plat fini</div></div>`;
+            return `<div><div style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:6px;scrollbar-width:none;-webkit-overflow-scrolling:touch;">${ids.map((id,ci)=>`<div style="flex-shrink:0;width:100%;scroll-snap-align:start;"><div class="polaroid" style="transform:rotate(${ci%2===0?-1.2:0.8}deg);"><img src="https://lh3.googleusercontent.com/d/${id}" style="width:100%;aspect-ratio:1/1;object-fit:cover;"><div class="polaroid-cap">${ci===0?'le plat fini':'photo '+(ci+1)}</div></div></div>`).join('')}</div><div style="display:flex;justify-content:center;gap:4px;margin-top:6px;">${ids.map((_,ci)=>`<div style="width:5px;height:5px;border-radius:50%;background:${ci===0?'var(--accent-deep)':'var(--border2)'};"></div>`).join('')}</div></div>`;
+          })()}
         </div>
         <div>
           <div class="tape tape-r"></div>
@@ -1424,15 +1431,37 @@ function exportCoursesPDF(){ showToast('Export PDF — bientôt disponible'); }
 /* ═══════════════════════════════════════════
    ADD / EDIT RECIPE
 ═══════════════════════════════════════════ */
-function handlePhoto(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    state.editPhotoBase64 = ev.target.result;
-    document.getElementById('photo-preview-wrap').innerHTML = `<img src="${ev.target.result}" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--r-sm);">`;
-  };
-  reader.readAsDataURL(file);
+function handlePhotos(e){
+  const files = Array.from(e.target.files);
+  if(!files.length) return;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      if(!state.editPhotos) state.editPhotos = [];
+      state.editPhotos.push(ev.target.result);
+      // Keep first as main for Gemini
+      if(state.editPhotos.length === 1) state.editPhotoBase64 = ev.target.result;
+      renderPhotoGrid();
+    };
+    reader.readAsDataURL(file);
+  });
+  // Reset input so same file can be re-selected
+  e.target.value = '';
+}
+function renderPhotoGrid(){
+  const grid = document.getElementById('photo-preview-grid');
+  if(!grid) return;
+  grid.innerHTML = (state.editPhotos||[]).map((b64, i) => `
+    <div style="position:relative;aspect-ratio:1/1;">
+      <img src="${b64}" style="width:100%;height:100%;object-fit:cover;border-radius:var(--r-sm);border:1.5px solid var(--border2);">
+      <button onclick="removePhoto(${i})" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;">×</button>
+      ${i===0?`<div style="position:absolute;bottom:4px;left:4px;background:var(--accent);color:#fff;font-size:9px;padding:2px 6px;border-radius:var(--r-pill);font-family:var(--font-hand);">principale</div>`:''}
+    </div>`).join('');
+}
+function removePhoto(i){
+  state.editPhotos.splice(i, 1);
+  state.editPhotoBase64 = state.editPhotos[0] || null;
+  renderPhotoGrid();
 }
 function addIngredient(){
   const qty = document.getElementById('ing-qty-input').value.trim();
@@ -1480,13 +1509,17 @@ async function saveRecipe(){
   const title = document.getElementById('f-title').value.trim();
   if(!title){ showToast('Ajoute un titre !'); return; }
   showToast('Enregistrement...');
-  let photoId = state.editPhotoId;
-  if(state.editPhotoBase64 && !photoId){
-    photoId = await uploadImage(state.editPhotoBase64, `photo_${Date.now()}.jpg`);
+  // Upload all new photos
+  let photoIds = state.editPhotoIds ? [...state.editPhotoIds] : [];
+  const photosToUpload = state.editPhotos || [];
+  for(let i = 0; i < photosToUpload.length; i++){
+    const pid = await uploadImage(photosToUpload[i], `photo_${Date.now()}_${i}.jpg`);
+    if(pid) photoIds.push(pid);
   }
+  const photoId = photoIds[0] || null; // main photo for backward compat
   const recipe = {
     id: state.editingId || 'r_' + Date.now(),
-    title, photoId,
+    title, photoId, photoIds,
     portions: parseInt(document.getElementById('f-portions').value)||4,
     prep: parseInt(document.getElementById('f-prep').value)||0,
     cook: parseInt(document.getElementById('f-cook').value)||0,
@@ -1518,8 +1551,10 @@ function resetForm(){
   document.getElementById('f-notes').value='';
   document.getElementById('f-cat').value='Plat';
   state.editIngredients=[]; state.editSteps=[];
-  state.editPhotoBase64=null; state.editPhotoId=null; state.editingId=null;
-  document.getElementById('photo-preview-wrap').innerHTML=`<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin:0 auto 8px;display:block;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><div class="hand" style="font-size:15px;">Ajouter une photo</div><div class="faint" style="margin-top:4px;">tap pour camera ou galerie · ou décrire pour IA ✨</div>`;
+  state.editPhotoBase64=null; state.editPhotoId=null; state.editPhotoIds=null;
+  state.editPhotos=[]; state.editingId=null;
+  const grid = document.getElementById('photo-preview-grid');
+  if(grid) grid.innerHTML='';
   renderEditIngredients(); renderEditSteps();
   setDiff(1);
 }
@@ -1532,6 +1567,8 @@ function editCurrentRecipe(){
   state.editSteps = [...(r.steps||[])];
   state.editDiff = r.difficulty||1;
   state.editPhotoId = r.photoId;
+  state.editPhotoIds = r.photoIds ? [...r.photoIds] : (r.photoId ? [r.photoId] : []);
+  state.editPhotos = []; // new photos to upload
   document.getElementById('f-title').value = r.title||'';
   document.getElementById('f-portions').value = r.portions||4;
   document.getElementById('f-prep').value = r.prep||0;
