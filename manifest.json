@@ -1,0 +1,14 @@
+{
+  "name": "MIAM — Carnet de recettes",
+  "short_name": "MIAM",
+  "description": "Ton carnet de recettes famille",
+  "start_url": "/MIAM/",
+  "display": "standalone",
+  "background_color": "#FDFAF6",
+  "theme_color": "#FDFAF6",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
