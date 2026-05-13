@@ -799,21 +799,34 @@ function showDetailMenu(){ showOverlay('overlay-detail-menu'); }
    GOOGLE AUTH
 ═══════════════════════════════════════════ */
 function signIn(){
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: CLIENT_ID,
-    scope: SCOPES + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-    callback: async (resp) => {
-      if(resp.error) { showToast('Erreur de connexion: ' + resp.error); return; }
-      state.token = resp.access_token;
-      // Store expiry time (tokens last ~1h)
-      state.tokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
-      localStorage.setItem('miam_token_expiry', state.tokenExpiry);
-      await fetchUserInfo();
-      await initDrive();
-      showScreen('home');
-    }
-  });
-  client.requestAccessToken();
+  // Use redirect flow — no popup, works in all browsers
+  const scope = encodeURIComponent(SCOPES + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email');
+  const redirectUri = encodeURIComponent('https://folexdev.github.io/MIAM');
+  const url = `https://accounts.google.com/o/oauth2/v2/auth`
+    + `?client_id=${CLIENT_ID}`
+    + `&redirect_uri=${redirectUri}`
+    + `&response_type=token`
+    + `&scope=${scope}`
+    + `&prompt=select_account`;
+  window.location.href = url;
+}
+
+async function handleOAuthRedirect(){
+  // Parse token from URL hash after redirect
+  const hash = window.location.hash.substring(1);
+  if(!hash) return false;
+  const params = {};
+  hash.split('&').forEach(p => { const [k,v] = p.split('='); params[k] = decodeURIComponent(v); });
+  if(!params.access_token) return false;
+  // Clean URL
+  window.history.replaceState({}, document.title, window.location.pathname);
+  state.token = params.access_token;
+  state.tokenExpiry = Date.now() + (parseInt(params.expires_in) || 3600) * 1000;
+  localStorage.setItem('miam_token_expiry', state.tokenExpiry);
+  await fetchUserInfo();
+  await initDrive();
+  showScreen('home');
+  return true;
 }
 async function fetchUserInfo(){
   const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -1672,6 +1685,8 @@ function loadUserLocally(){
 }
 function clearUserLocally(){
   localStorage.removeItem('miam_user');
+  localStorage.removeItem('miam_token');
+  localStorage.removeItem('miam_token_expiry');
 }
 function updateUserUI(){
   const av = document.getElementById('home-avatar');
@@ -1684,43 +1699,25 @@ function updateUserUI(){
   if(pe && state.user) pe.textContent = state.user.email;
 }
 function silentSignIn(onSuccess, onFail){
-  try {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPES + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-      prompt: 'none',
-      callback: async (resp) => {
-        // Silent errors — no popup, just fall back gracefully
-        if(resp.error){
-          // 'interaction_required' or 'login_required' = user needs to sign in manually, no problem
-          onFail && onFail();
-          return;
-        }
-        if(!resp.access_token){ onFail && onFail(); return; }
-        state.token = resp.access_token;
-        state.tokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
-        localStorage.setItem('miam_token_expiry', state.tokenExpiry);
-        onSuccess && onSuccess();
-      },
-      error_callback: (err) => {
-        // Swallow silently — no popup shown, just go to login screen
-        onFail && onFail();
-      }
-    });
-    client.requestAccessToken({ prompt: 'none' });
-  } catch(e){ onFail && onFail(); }
+  // Check if token is still valid from previous session
+  const expiry = parseInt(localStorage.getItem('miam_token_expiry') || '0');
+  const savedToken = localStorage.getItem('miam_token');
+  if(savedToken && expiry > Date.now() + 60000){
+    state.token = savedToken;
+    onSuccess && onSuccess();
+    return;
+  }
+  // Token expired or missing — user must sign in manually
+  onFail && onFail();
 }
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
   applySkin();
-  const savedUser = loadUserLocally();
-  if(!savedUser) return;
-  state.user = savedUser;
-  updateUserUI();
-  function trySilent(){
-    if(typeof google === 'undefined' || !google.accounts){
-      setTimeout(trySilent, 300); return;
-    }
-    // Load cached data immediately for instant display
+  // 1. Handle OAuth redirect (returning from Google login)
+  if(window.location.hash.includes('access_token')){
+    const handled = await handleOAuthRedirect();
+    if(handled) return;
+  }
+  // 2. Load cached data immediately
   try {
     const cached = JSON.parse(localStorage.getItem('miam_data_cache'));
     if(cached){
@@ -1729,12 +1726,15 @@ window.addEventListener('load', () => {
       state.checkedCourses = cached.checkedCourses || [];
     }
   } catch(e){}
+  // 3. Try silent login with stored token
+  const savedUser = loadUserLocally();
+  if(!savedUser) return;
+  state.user = savedUser;
+  updateUserUI();
   silentSignIn(
     async () => { await initDrive(); showScreen('home'); },
-    () => { clearUserLocally(); /* Stay on login silently, no popup */ }
+    () => { /* Token expired — stay on login */ }
   );
-  }
-  trySilent();
 });
 </script>
 </body>
