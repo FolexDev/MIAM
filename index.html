@@ -1676,14 +1676,24 @@ function silentSignIn(onSuccess, onFail){
     const client = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: SCOPES + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-      prompt: '',
+      prompt: 'none',
       callback: async (resp) => {
-        if(resp.error || !resp.access_token){ onFail && onFail(); return; }
+        // Silent errors — no popup, just fall back gracefully
+        if(resp.error){
+          // 'interaction_required' or 'login_required' = user needs to sign in manually, no problem
+          onFail && onFail();
+          return;
+        }
+        if(!resp.access_token){ onFail && onFail(); return; }
         state.token = resp.access_token;
         onSuccess && onSuccess();
+      },
+      error_callback: (err) => {
+        // Swallow silently — no popup shown, just go to login screen
+        onFail && onFail();
       }
     });
-    client.requestAccessToken({ prompt: '' });
+    client.requestAccessToken({ prompt: 'none' });
   } catch(e){ onFail && onFail(); }
 }
 window.addEventListener('load', () => {
@@ -1707,7 +1717,7 @@ window.addEventListener('load', () => {
   } catch(e){}
   silentSignIn(
     async () => { await initDrive(); showScreen('home'); },
-    () => { clearUserLocally(); showToast('Session expirée, reconnecte-toi'); }
+    () => { clearUserLocally(); /* Stay on login silently, no popup */ }
   );
   }
   trySilent();
