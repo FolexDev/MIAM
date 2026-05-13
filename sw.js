@@ -1,5 +1,5 @@
 const CACHE = 'miam-v1';
-const ASSETS = ['/', '/MIAM/', '/MIAM/index.html', '/MIAM/MIAM Icon 192.png', '/MIAM/MIAM Icon 512.png'];
+const ASSETS = ['/', '/MIAM/', '/MIAM/index.html', '/MIAM/icon-192.png', '/MIAM/icon-512.png'];
  
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
