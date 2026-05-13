@@ -50,7 +50,7 @@
    BASE
 ═══════════════════════════════════════════ */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:16px;transition:background .3s,color .3s;touch-action:pan-y;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:16px;transition:background .3s,color .3s;}
 button{cursor:pointer;font-family:inherit;border:none;background:none;}
 input,textarea{font-family:inherit;}
 img{max-width:100%;display:block;}
@@ -58,10 +58,10 @@ img{max-width:100%;display:block;}
 /* ═══════════════════════════════════════════
    LAYOUT
 ═══════════════════════════════════════════ */
-#app{height:100vh;display:flex;flex-direction:column;overflow:hidden;max-width:430px;margin:0 auto;position:relative;touch-action:pan-y;}
-.screen{display:none !important;flex:1;flex-direction:column;overflow:hidden;}
+#app{height:100dvh;display:flex;flex-direction:column;overflow:hidden;max-width:430px;margin:0 auto;position:relative;}
+.screen{display:none !important;flex:1;flex-direction:column;min-height:0;}
 .screen.active{display:flex !important;}
-.scroll-area{flex:1;overflow-y:scroll;-webkit-overflow-scrolling:touch;padding:16px 16px 100px;overscroll-behavior:contain;}
+.scroll-area{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 100px;overscroll-behavior-y:contain;}
 .scroll-area::-webkit-scrollbar{display:none;}
 
 /* ═══════════════════════════════════════════
