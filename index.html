@@ -866,6 +866,8 @@ async function initDrive(){
     await saveData();
   }
   showToast('✓ Drive connecté');
+  // Flush any saves that were queued before Drive was ready
+  if(state.pendingSave){ await saveData(); }
 }
 async function loadData(){
   if(!state.fileId) return;
@@ -874,25 +876,54 @@ async function loadData(){
     state.recipes = r.recipes || [];
     state.courses = r.courses || [];
     state.checkedCourses = r.checkedCourses || [];
+    // Cache locally as fallback
+    localStorage.setItem('miam_data_cache', JSON.stringify(r));
+  } else {
+    // Drive failed — try local cache
+    try {
+      const cached = JSON.parse(localStorage.getItem('miam_data_cache'));
+      if(cached){
+        state.recipes = cached.recipes || [];
+        state.courses = cached.courses || [];
+        state.checkedCourses = cached.checkedCourses || [];
+        showToast('⚠ Mode hors-ligne — données en cache');
+      }
+    } catch(e){}
   }
 }
 async function saveData(){
+  // If Drive not ready, queue the save and retry
+  if(!state.token || !state.folderId){
+    console.warn('Drive not ready — save queued');
+    state.pendingSave = true;
+    return;
+  }
+  state.pendingSave = false;
   const data = { recipes: state.recipes, courses: state.courses, checkedCourses: state.checkedCourses };
   const blob = new Blob([JSON.stringify(data)], {type:'application/json'});
-  if(!state.fileId){
-    const meta = { name: DATA_FILE, parents: [state.folderId] };
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(meta)], {type:'application/json'}));
-    form.append('file', blob);
-    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-      method:'POST', headers:{'Authorization':'Bearer '+state.token}, body: form
-    });
-    const d = await r.json();
-    state.fileId = d.id;
-  } else {
-    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${state.fileId}?uploadType=media`, {
-      method:'PATCH', headers:{'Authorization':'Bearer '+state.token,'Content-Type':'application/json'}, body: JSON.stringify(data)
-    });
+  try {
+    if(!state.fileId){
+      const meta = { name: DATA_FILE, parents: [state.folderId] };
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(meta)], {type:'application/json'}));
+      form.append('file', blob);
+      const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method:'POST', headers:{'Authorization':'Bearer '+state.token}, body: form
+      });
+      const d = await r.json();
+      if(d.id){ state.fileId = d.id; localStorage.setItem('miam_data_cache', JSON.stringify(data)); showToast('✓ Sauvegardé'); }
+      else { showToast('⚠ Erreur sauvegarde Drive'); console.error(d); }
+    } else {
+      const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${state.fileId}?uploadType=media`, {
+        method:'PATCH', headers:{'Authorization':'Bearer '+state.token,'Content-Type':'application/json'}, body: JSON.stringify(data)
+      });
+      if(r.ok){ localStorage.setItem('miam_data_cache', JSON.stringify(data)); showToast('✓ Sauvegardé'); }
+      else showToast('⚠ Erreur sauvegarde');
+    }
+  } catch(e){
+    showToast('⚠ Pas de connexion — données en attente');
+    state.pendingSave = true;
+    console.error(e);
   }
 }
 async function uploadImage(base64, filename){
@@ -1665,10 +1696,19 @@ window.addEventListener('load', () => {
     if(typeof google === 'undefined' || !google.accounts){
       setTimeout(trySilent, 300); return;
     }
-    silentSignIn(
-      async () => { await initDrive(); showScreen('home'); },
-      () => { clearUserLocally(); showToast('Session expirée, reconnecte-toi'); }
-    );
+    // Load cached data immediately for instant display
+  try {
+    const cached = JSON.parse(localStorage.getItem('miam_data_cache'));
+    if(cached){
+      state.recipes = cached.recipes || [];
+      state.courses = cached.courses || [];
+      state.checkedCourses = cached.checkedCourses || [];
+    }
+  } catch(e){}
+  silentSignIn(
+    async () => { await initDrive(); showScreen('home'); },
+    () => { clearUserLocally(); showToast('Session expirée, reconnecte-toi'); }
+  );
   }
   trySilent();
 });
