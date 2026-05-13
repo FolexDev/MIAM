@@ -808,6 +808,7 @@ async function fetchUserInfo(){
   });
   const d = await r.json();
   state.user = { name: d.name, email: d.email, picture: d.picture, initials: (d.given_name||'?')[0] + (d.family_name||'?')[0] };
+  saveUserLocally();
   const av = document.getElementById('home-avatar');
   if(av) av.textContent = state.user.initials;
   const avl = document.getElementById('profile-avatar-lg');
@@ -819,6 +820,7 @@ async function fetchUserInfo(){
 }
 function signOut(){
   state.user = null; state.token = null; state.recipes = [];
+  clearUserLocally();
   showScreen('login');
 }
 
@@ -1580,16 +1582,58 @@ function showToast(msg){
 })();
 
 /* ═══════════════════════════════════════════
-   AUTO LOGIN CHECK
+   PERSISTENT LOGIN
 ═══════════════════════════════════════════ */
-window.addEventListener('load', ()=>{
+function saveUserLocally(){
+  localStorage.setItem('miam_user', JSON.stringify(state.user));
+}
+function loadUserLocally(){
+  try { return JSON.parse(localStorage.getItem('miam_user')); } catch(e){ return null; }
+}
+function clearUserLocally(){
+  localStorage.removeItem('miam_user');
+}
+function updateUserUI(){
+  const av = document.getElementById('home-avatar');
+  if(av && state.user) av.textContent = state.user.initials;
+  const avl = document.getElementById('profile-avatar-lg');
+  if(avl && state.user) avl.textContent = state.user.initials;
+  const pn = document.getElementById('profile-name');
+  if(pn && state.user) pn.textContent = state.user.name;
+  const pe = document.getElementById('profile-email');
+  if(pe && state.user) pe.textContent = state.user.email;
+}
+function silentSignIn(onSuccess, onFail){
+  try {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+      prompt: '',
+      callback: async (resp) => {
+        if(resp.error || !resp.access_token){ onFail && onFail(); return; }
+        state.token = resp.access_token;
+        onSuccess && onSuccess();
+      }
+    });
+    client.requestAccessToken({ prompt: '' });
+  } catch(e){ onFail && onFail(); }
+}
+window.addEventListener('load', () => {
   applySkin();
-  // Try silent token
-  const cachedToken = sessionStorage.getItem('miam_token');
-  if(cachedToken){
-    state.token = cachedToken;
-    // Will fail gracefully if expired
+  const savedUser = loadUserLocally();
+  if(!savedUser) return;
+  state.user = savedUser;
+  updateUserUI();
+  function trySilent(){
+    if(typeof google === 'undefined' || !google.accounts){
+      setTimeout(trySilent, 300); return;
+    }
+    silentSignIn(
+      async () => { await initDrive(); showScreen('home'); },
+      () => { clearUserLocally(); showToast('Session expirée, reconnecte-toi'); }
+    );
   }
+  trySilent();
 });
 </script>
 </body>
