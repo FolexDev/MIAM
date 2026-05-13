@@ -335,7 +335,7 @@ img{max-width:100%;display:block;}
     <div class="stain" style="bottom:60px;left:-20px;width:140px;height:140px;opacity:.05;">
       <svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="80" fill="#D98E6B"/></svg>
     </div>
-    <div class="login-logo">MIAM</div>
+    <img src="icon-512.png" alt="MIAM" style="width:110px;height:110px;border-radius:24px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,.1);">
     <p class="login-sub">ton carnet de recettes</p>
     <div style="margin-bottom:32px;">
       <div class="skin-toggle" style="display:inline-flex;">
@@ -353,9 +353,12 @@ img{max-width:100%;display:block;}
   <!-- ═══ ACCUEIL ═══ -->
   <div id="screen-home" class="screen">
     <div class="topbar">
-      <div>
-        <div class="faint" id="home-date"></div>
-        <div class="h2" id="home-greeting">Bonjour !</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img src="icon-192.png" alt="MIAM" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;">
+        <div>
+          <div class="faint" id="home-date"></div>
+          <div class="h2" id="home-greeting">Bonjour !</div>
+        </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="icon-btn" onclick="toggleSkin()" title="Changer de skin">
@@ -725,7 +728,7 @@ const CLIENT_ID = '947069561983-ok1geihoop055cbq824msaomt0mqddrf.apps.googleuser
 const GEMINI_KEY = 'AIzaSyAz6KwGVTm367R_fu95nNZr0w7GSL4Cle0';
 const FOLDER_NAME = 'MIAM_Recettes';
 const DATA_FILE = 'miam_data.json';
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const SCOPES = 'https://www.googleapis.com/auth/drive';
 
 /* ═══════════════════════════════════════════
    STATE
@@ -800,8 +803,11 @@ function signIn(){
     client_id: CLIENT_ID,
     scope: SCOPES + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
     callback: async (resp) => {
-      if(resp.error) { showToast('Erreur de connexion'); return; }
+      if(resp.error) { showToast('Erreur de connexion: ' + resp.error); return; }
       state.token = resp.access_token;
+      // Store expiry time (tokens last ~1h)
+      state.tokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
+      localStorage.setItem('miam_token_expiry', state.tokenExpiry);
       await fetchUserInfo();
       await initDrive();
       showScreen('home');
@@ -844,30 +850,36 @@ async function driveReq(url, opts={}){
 }
 async function initDrive(){
   showToast('Connexion Drive...');
-  // Find or create folder
-  let q = `name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  let r = await driveReq(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
-  if(r && r.files && r.files.length) {
-    state.folderId = r.files[0].id;
-  } else {
-    const cr = await driveReq('https://www.googleapis.com/drive/v3/files', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ name:FOLDER_NAME, mimeType:'application/vnd.google-apps.folder' })
-    });
-    state.folderId = cr?.id;
+  try {
+    // Find or create folder
+    const q = encodeURIComponent(`name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+    const r = await driveReq(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`);
+    if(!r){ showToast('⚠ Erreur Drive — vérifie ta connexion'); return; }
+    if(r.files && r.files.length){
+      state.folderId = r.files[0].id;
+    } else {
+      const cr = await driveReq('https://www.googleapis.com/drive/v3/files', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name:FOLDER_NAME, mimeType:'application/vnd.google-apps.folder' })
+      });
+      if(!cr?.id){ showToast('⚠ Impossible de créer le dossier Drive'); return; }
+      state.folderId = cr.id;
+    }
+    // Find or create data file
+    const q2 = encodeURIComponent(`name='${DATA_FILE}' and '${state.folderId}' in parents and trashed=false`);
+    const r2 = await driveReq(`https://www.googleapis.com/drive/v3/files?q=${q2}&fields=files(id,name)`);
+    if(r2 && r2.files && r2.files.length){
+      state.fileId = r2.files[0].id;
+      await loadData();
+    } else {
+      await saveData();
+    }
+    showToast('✓ Drive connecté');
+    if(state.pendingSave){ await saveData(); }
+  } catch(e){
+    console.error('initDrive error:', e);
+    showToast('⚠ Erreur Drive: ' + e.message);
   }
-  // Find or create data file
-  let q2 = `name='${DATA_FILE}' and '${state.folderId}' in parents and trashed=false`;
-  let r2 = await driveReq(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q2)}&fields=files(id,name)`);
-  if(r2 && r2.files && r2.files.length){
-    state.fileId = r2.files[0].id;
-    await loadData();
-  } else {
-    await saveData();
-  }
-  showToast('✓ Drive connecté');
-  // Flush any saves that were queued before Drive was ready
-  if(state.pendingSave){ await saveData(); }
 }
 async function loadData(){
   if(!state.fileId) return;
@@ -1686,6 +1698,8 @@ function silentSignIn(onSuccess, onFail){
         }
         if(!resp.access_token){ onFail && onFail(); return; }
         state.token = resp.access_token;
+        state.tokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
+        localStorage.setItem('miam_token_expiry', state.tokenExpiry);
         onSuccess && onSuccess();
       },
       error_callback: (err) => {
