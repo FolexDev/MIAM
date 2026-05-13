@@ -59,8 +59,8 @@ img{max-width:100%;display:block;}
    LAYOUT
 ═══════════════════════════════════════════ */
 #app{height:100vh;display:flex;flex-direction:column;overflow:hidden;max-width:430px;margin:0 auto;position:relative;}
-.screen{display:none;flex:1;flex-direction:column;overflow:hidden;}
-.screen.active{display:flex;}
+.screen{display:none !important;flex:1;flex-direction:column;overflow:hidden;}
+.screen.active{display:flex !important;}
 .scroll-area{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 100px;}
 .scroll-area::-webkit-scrollbar{display:none;}
 
@@ -328,7 +328,7 @@ img{max-width:100%;display:block;}
 
 <div id="app">
   <!-- ═══ LOGIN ═══ -->
-  <div id="screen-login" class="screen active" style="display:flex;">
+  <div id="screen-login" class="screen active">
     <div class="stain" style="top:-40px;right:-30px;width:180px;height:180px;opacity:.06;">
       <svg viewBox="0 0 200 200"><path d="M100 40 Q130 20 160 50 Q190 80 170 120 Q150 160 110 155 Q70 150 50 120 Q30 90 60 60 Q80 40 100 40Z" fill="#D98E6B"/></svg>
     </div>
